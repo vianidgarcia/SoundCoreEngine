@@ -7,6 +7,8 @@ using System.Threading.Tasks;
 using SoundCoreEngine.Models;
 using SoundCoreEngine.OwnStructures;
 
+//Daniela Vianey Garcia Padilla - I25050363 - 28 Sept 2026
+
 namespace SoundCoreEngine.Motor
 {
     public class BenchmarkService
@@ -20,7 +22,6 @@ namespace SoundCoreEngine.Motor
         /// </summary>
         public BenchmarkResults Execute(int n = DefaultInsertions)
         {
-            var random = new Random(42);
             var sw = new Stopwatch();
 
             var testCustomList = new SimpleLinkedList<Track>();
@@ -28,7 +29,7 @@ namespace SoundCoreEngine.Motor
             sw.Start();
             for (int i = 0; i < n; i++)
             {
-                testCustomList.PlayNext(new Track(i, $"Track {i}", "DJ", random.Next(100, 150), 180));
+                testCustomList.PlayNext(new Track(i, $"Track {i}", "DJ", 120, 180));
             }
             sw.Stop();
             long customListTime = sw.ElapsedMilliseconds;
@@ -38,7 +39,7 @@ namespace SoundCoreEngine.Motor
             sw.Restart();
             for (int i = 0; i < n; i++)
             {
-                var track = new Track(i, $"Track {i}", "DJ", random.Next(100, 150), 180);
+                var track = new Track(i, $"Track {i}", "DJ", 120, 180);
                 if (testLinkedList.First == null) testLinkedList.AddFirst(track);
                 else testLinkedList.AddAfter(testLinkedList.First, track);
             }
@@ -49,7 +50,7 @@ namespace SoundCoreEngine.Motor
             sw.Restart();
             for (int i = 0; i < n; i++)
             {
-                testList.Insert(1, new Track(i, $"Track {i}", "DJ", random.Next(100, 150), 180));
+                testList.Insert(1, new Track(i, $"Track {i}", "DJ", 120, 180));
             }
             sw.Stop();
             long listTime = sw.ElapsedMilliseconds;
