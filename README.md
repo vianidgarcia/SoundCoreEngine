@@ -5,7 +5,7 @@ Proyecto evaluativo de la asignatura **Estructura de Datos** — TecNM Campus Mo
 Compara una **Lista Enlazada Simple genérica implementada desde cero** contra las colecciones nativas de .NET (`LinkedList<T>` y `List<T>`) en un escenario realista de cola de reproducción para DJs, midiendo el rendimiento con `Stopwatch` ante inserciones intermedias masivas.
 
 **Estudiante:** Daniela Vianey García Padilla - I25050363
-
+**Calificación:** 100
 ---
 
 ## 1. Objetivo
