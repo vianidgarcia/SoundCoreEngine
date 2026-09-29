@@ -4,10 +4,9 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-//Daniela Vianey Garcia Padilla - I25050363 - 28 Sept 2026
-
 namespace SoundCoreEngine.Audio
 {
+    //translate to English
     public interface IAudioMetadataProvider
     {
         // Tries to read the BPM embedded in the file tags (ID3v2, Vorbis, etc.).

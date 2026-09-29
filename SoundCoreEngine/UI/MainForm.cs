@@ -27,6 +27,7 @@ namespace SoundCoreEngine
 
             _gestor.QueueUpdated += RefrescarVista;
             _player.PlaybackStopped += Player_PlaybackStopped;
+            CargarDatosSemilla();
         }
 
         private void ConfigurarColumnasGrid()
@@ -38,6 +39,18 @@ namespace SoundCoreEngine
             dgvCola.Columns[3].Name = "BPM";
             dgvCola.Columns[4].Name = "Duración";
             dgvCola.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+        }
+
+        private void CargarDatosSemilla()
+        {
+            var demo = new[]
+            {
+            new Track(_contadorId++, "Strobe", "deadmau5", 128, 634),
+            new Track(_contadorId++, "Midnight City", "M83", 105, 243),
+            new Track(_contadorId++, "Animals", "Martin Garrix", 130, 304)
+        };
+
+            _gestor.LoadSeedData(demo);
         }
 
         private Track CrearPistaDesdeFormulario()
@@ -120,19 +133,6 @@ namespace SoundCoreEngine
                 int bpm = _lectorMetadatos.ReadBpm(ruta) ?? 120;
                 int duracion = _lectorMetadatos.ReadDurationSeconds(ruta);
 
-                string mensaje =
-                    $"¿Agregar este archivo a la cola?\n\n" +
-                    $"Archivo: {System.IO.Path.GetFileName(ruta)}\n" +
-                    $"Título: {titulo}\n" +
-                    $"Artista: {artista}\n" +
-                    $"BPM: {(_lectorMetadatos.ReadBpm(ruta).HasValue ? bpm.ToString() : $"{bpm} (no encontrado en el tag, valor por defecto)")}\n" +
-                    $"Duración: {TimeSpan.FromSeconds(duracion):mm\\:ss}";
-
-                var respuesta = MessageBox.Show(mensaje, "Confirmar carga de audio",
-                    MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-
-                if (respuesta != DialogResult.Yes) continue;
-
                 var pista = new Track(_contadorId++, titulo, artista, bpm, duracion, ruta);
                 _gestor.EnqueueAtEnd(pista);
             }
@@ -166,7 +166,7 @@ namespace SoundCoreEngine
             playbackTimer.Start();
 
             lblNowPlaying.Text = $"▶ Sonando: {cabeza.Title} - {cabeza.Artist} ({cabeza.Bpm} BPM)";
-            lblNowPlaying.ForeColor = Color.FromArgb(0x7C, 0x5C, 0xFF);
+            lblNowPlaying.ForeColor = Color.FromArgb(0x3F, 0xD0, 0xC9);
         }
 
         private void btnPause_Click(object sender, EventArgs e)
