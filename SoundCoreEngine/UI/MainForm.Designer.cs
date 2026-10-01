@@ -49,6 +49,7 @@
             btnInvertir = new Button();
             btnOrdenarBpm = new Button();
             btnPurgar = new Button();
+            btnSimular = new Button();
             panelPlaylist = new Panel();
             dgvCola = new DataGridView();
             lblNowPlaying = new Label();
@@ -253,6 +254,7 @@
             panelAcciones.Controls.Add(btnInvertir);
             panelAcciones.Controls.Add(btnOrdenarBpm);
             panelAcciones.Controls.Add(btnPurgar);
+            panelAcciones.Controls.Add(btnSimular);
             panelAcciones.Dock = DockStyle.Left;
             panelAcciones.FlowDirection = FlowDirection.TopDown;
             panelAcciones.Location = new Point(0, 100);
@@ -346,6 +348,20 @@
             btnPurgar.ForeColor = Color.FromArgb(0xD8, 0xDD, 0xE3);
             btnPurgar.FlatStyle = FlatStyle.Flat;
             btnPurgar.FlatAppearance.BorderSize = 0;
+            // 
+            // btnSimular
+            // 
+            btnSimular.Location = new Point(13, 241);
+            btnSimular.Name = "btnSimular";
+            btnSimular.Size = new Size(190, 32);
+            btnSimular.TabIndex = 6;
+            btnSimular.Text = "🧪 Simular 25,000 Pistas";
+            btnSimular.UseVisualStyleBackColor = true;
+            btnSimular.Click += btnSimular_Click;
+            btnSimular.BackColor = Color.FromArgb(0x2D, 0x33, 0x3B);
+            btnSimular.ForeColor = Color.FromArgb(0xD8, 0xDD, 0xE3);
+            btnSimular.FlatStyle = FlatStyle.Flat;
+            btnSimular.FlatAppearance.BorderSize = 0;
             // 
             // panelPlaylist
             // 
@@ -612,6 +628,7 @@
         private System.Windows.Forms.Button btnInvertir;
         private System.Windows.Forms.Button btnOrdenarBpm;
         private System.Windows.Forms.Button btnPurgar;
+        private System.Windows.Forms.Button btnSimular;
 
         private System.Windows.Forms.Panel panelPlaylist;
         private System.Windows.Forms.DataGridView dgvCola;

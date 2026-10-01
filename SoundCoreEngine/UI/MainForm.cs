@@ -12,6 +12,12 @@ namespace SoundCoreEngine
         private readonly PlaybackQueueManager _gestor = new();
         private readonly IAudioMetadataProvider _lectorMetadatos = new TagLibReader();
         private readonly NAudioPlayer _player = new();
+        private readonly IBpmAnalyzer _analizadorBpm = new SpectralFluxBpmAnalyzer();
+
+        // Por debajo de esta confianza (0..1) el BPM calculado se considera dudoso
+        // y, si el archivo trae BPM en sus tags, se usa ese valor como respaldo.
+        private const double MinConfianzaBpm = 0.10;
+        private string _tituloVentana = "";
         private int _contadorId = 1;
 
         // Se marca en true justo antes de llamar _player.Stop() manualmente,
@@ -23,6 +29,7 @@ namespace SoundCoreEngine
         public MainForm()
         {
             InitializeComponent();
+            _tituloVentana = Text;
             ConfigurarColumnasGrid();
 
             _gestor.QueueUpdated += RefrescarVista;
@@ -53,16 +60,6 @@ namespace SoundCoreEngine
             _gestor.LoadSeedData(demo);
         }
 
-        private Track CrearPistaDesdeFormulario()
-        {
-            string titulo = string.IsNullOrWhiteSpace(txtTitulo.Text) ? $"Pista {_contadorId}" : txtTitulo.Text.Trim();
-            string artista = string.IsNullOrWhiteSpace(txtArtista.Text) ? "DJ Desconocido" : txtArtista.Text.Trim();
-            int bpm = (int)numBpm.Value;
-            int duracion = (int)numDuracion.Value;
-
-            return new Track(_contadorId++, titulo, artista, bpm, duracion);
-        }
-
         private StructureType LeerEstructuraSeleccionada() =>
             rbPropia.Checked ? StructureType.CustomList :
             rbLinkedList.Checked ? StructureType.LinkedListNative :
@@ -76,11 +73,21 @@ namespace SoundCoreEngine
             RefrescarVista();
         }
 
-        private void btnEncolarFinal_Click(object sender, EventArgs e) =>
-            _gestor.EnqueueAtEnd(CrearPistaDesdeFormulario());
+        // Encolar al final: permite varios archivos, se agregan en el orden elegido.
+        private async void btnEncolarFinal_Click(object sender, EventArgs e)
+        {
+            foreach (var pista in await SeleccionarPistasAsync(true, "Encolar al final"))
+                _gestor.EnqueueAtEnd(pista);
+        }
 
-        private void btnReproducirSiguiente_Click(object sender, EventArgs e) =>
-            _gestor.PlayNext(CrearPistaDesdeFormulario());
+        // Reproducir siguiente: un solo archivo, porque PlayNext inserta justo después
+        // de la cabeza y varios archivos quedarían en orden inverso.
+        private async void btnReproducirSiguiente_Click(object sender, EventArgs e)
+        {
+            var pista = (await SeleccionarPistasAsync(false, "Reproducir siguiente")).FirstOrDefault();
+            if (pista != null)
+                _gestor.PlayNext(pista);
+        }
 
         // Avance manual: corta lo que esté sonando, saca la cabeza actual y
         // reproduce automáticamente lo que quede al frente. Se marca como
@@ -109,33 +116,169 @@ namespace SoundCoreEngine
 
         private void btnPurgar_Click(object sender, EventArgs e) => _gestor.PurgeDuplicatesByTitle();
 
-        // Carga uno o varios archivos de audio, lee sus metadatos con TagLibSharp
-        // (con valores por defecto si el tag no trae algo) y encola cada uno al
-        // final de la estructura activa. La Track resultante guarda la ruta
-        // completa del archivo, que es lo que el reproductor necesita.
-        private void btnCargarArchivos_Click(object sender, EventArgs e)
+        // Abre el diálogo de archivos y devuelve las pistas ya construidas: título y
+        // artista desde TagLib, BPM calculado por análisis de señal (ver ResolverBpmAsync)
+        // y ruta completa. Lista vacía si el usuario cancela.
+        private async Task<List<Track>> SeleccionarPistasAsync(bool multiple, string titulo)
         {
             using var dialogo = new OpenFileDialog
             {
                 Filter = "Archivos de audio|*.mp3;*.wav;*.flac;*.m4a;*.wma|Todos los archivos|*.*",
-                Multiselect = true,
-                Title = "Cargar archivos de audio"
+                Multiselect = multiple,
+                Title = titulo
             };
 
+            var pistas = new List<Track>();
+            if (dialogo.ShowDialog(this) != DialogResult.OK) return pistas;
+
+            var rutas = dialogo.FileNames;
+            EstablecerAnalizando(true);
+            try
+            {
+                for (int i = 0; i < rutas.Length; i++)
+                {
+                    Text = $"{_tituloVentana} — Analizando BPM ({i + 1}/{rutas.Length})...";
+
+                    string ruta = rutas[i];
+                    string nombreArchivo = System.IO.Path.GetFileNameWithoutExtension(ruta);
+
+                    string tituloPista = _lectorMetadatos.ReadTitle(ruta) ?? nombreArchivo;
+                    string artista = _lectorMetadatos.ReadArtist(ruta) ?? "DJ Desconocido";
+                    int duracion = _lectorMetadatos.ReadDurationSeconds(ruta);
+                    int bpm = await ResolverBpmAsync(ruta);
+
+                    pistas.Add(new Track(_contadorId++, tituloPista, artista, bpm, duracion, ruta));
+                }
+            }
+            finally
+            {
+                EstablecerAnalizando(false);
+            }
+            return pistas;
+        }
+
+        // El BPM se calcula siempre a partir del audio. El tag solo es respaldo:
+        // se usa si el análisis falla o su confianza es baja. Último recurso: 120.
+        private async Task<int> ResolverBpmAsync(string ruta)
+        {
+            int? bpmTag = _lectorMetadatos.ReadBpm(ruta);
+
+            (int bpm, double confidence)? estimado = null;
+            try
+            {
+                estimado = await _analizadorBpm.EstimateBpmAsync(ruta);
+            }
+            catch (Exception)
+            {
+                // Se ignora: se cae al tag o al valor por defecto.
+            }
+
+            if (estimado is { } e && (e.confidence >= MinConfianzaBpm || bpmTag == null))
+                return e.bpm;
+
+            return bpmTag ?? 120;
+        }
+
+        // Evita acciones reentrantes mientras se analiza el audio en segundo plano.
+        private void EstablecerAnalizando(bool analizando)
+        {
+            btnEncolarFinal.Enabled = !analizando;
+            btnReproducirSiguiente.Enabled = !analizando;
+            btnCargarArchivos.Enabled = !analizando;
+            Cursor = analizando ? Cursors.WaitCursor : Cursors.Default;
+            if (!analizando) Text = _tituloVentana;
+        }
+
+        // "Cargar Archivos" comparte la misma lógica que Encolar al Final.
+        private async void btnCargarArchivos_Click(object sender, EventArgs e)
+        {
+            foreach (var pista in await SeleccionarPistasAsync(true, "Cargar archivos de audio"))
+                _gestor.EnqueueAtEnd(pista);
+        }
+
+        private const int TotalSimulacion = 25_000;
+
+        // Simulación de carga masiva: lee canciones desde un .txt y encola 25,000
+        // pistas SIN archivo de audio (FilePath vacío). Formato por línea:
+        //     Título;Artista;BPM;Duración(segundos)
+        // Las líneas vacías, las que empiezan con '#' y las inválidas se ignoran.
+        // Si el archivo trae menos de 25,000 líneas válidas, se reciclan en ciclo
+        // hasta completar la cantidad (cada pista recibe un Id nuevo).
+        private void btnSimular_Click(object sender, EventArgs e)
+        {
+            using var dialogo = new OpenFileDialog
+            {
+                Filter = "Archivos de texto|*.txt|Todos los archivos|*.*",
+                Title = "Seleccionar archivo con datos de canciones"
+            };
             if (dialogo.ShowDialog(this) != DialogResult.OK) return;
 
-            foreach (var ruta in dialogo.FileNames)
+            var plantillas = LeerPlantillasDesdeTxt(dialogo.FileName);
+            if (plantillas.Count == 0)
             {
-                string nombreArchivo = System.IO.Path.GetFileNameWithoutExtension(ruta);
-
-                string titulo = _lectorMetadatos.ReadTitle(ruta) ?? nombreArchivo;
-                string artista = _lectorMetadatos.ReadArtist(ruta) ?? "DJ Desconocido";
-                int bpm = _lectorMetadatos.ReadBpm(ruta) ?? 120;
-                int duracion = _lectorMetadatos.ReadDurationSeconds(ruta);
-
-                var pista = new Track(_contadorId++, titulo, artista, bpm, duracion, ruta);
-                _gestor.EnqueueAtEnd(pista);
+                MessageBox.Show(
+                    "El archivo no contiene líneas válidas.\r\nFormato esperado por línea:\r\nTítulo;Artista;BPM;Duración(segundos)",
+                    "Archivo sin datos", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
             }
+
+            var pistas = new List<Track>(TotalSimulacion);
+            for (int i = 0; i < TotalSimulacion; i++)
+            {
+                var d = plantillas[i % plantillas.Count];
+                pistas.Add(new Track(_contadorId++, d.Titulo, d.Artista, d.Bpm, d.Segundos));
+            }
+
+            // Se desuscribe el refresco del grid: de lo contrario se redibujaría
+            // 25,000 veces (una por inserción). Se refresca una sola vez al final.
+            Cursor = Cursors.WaitCursor;
+            btnSimular.Enabled = false;
+            var cronometro = System.Diagnostics.Stopwatch.StartNew();
+            try
+            {
+                _gestor.QueueUpdated -= RefrescarVista;
+                foreach (var pista in pistas)
+                    _gestor.EnqueueAtEnd(pista);
+                cronometro.Stop();
+            }
+            finally
+            {
+                _gestor.QueueUpdated += RefrescarVista;
+                RefrescarVista();
+                btnSimular.Enabled = true;
+                Cursor = Cursors.Default;
+            }
+
+            MessageBox.Show(
+                $"Se insertaron {TotalSimulacion:N0} pistas sin archivo de audio.\r\n" +
+                $"Tiempo de inserción: {cronometro.ElapsedMilliseconds} ms",
+                "Simulación completada", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+        private static List<(string Titulo, string Artista, int Bpm, int Segundos)> LeerPlantillasDesdeTxt(string ruta)
+        {
+            var lista = new List<(string, string, int, int)>();
+
+            foreach (var linea in System.IO.File.ReadLines(ruta))
+            {
+                var texto = linea.Trim();
+                if (texto.Length == 0 || texto.StartsWith('#')) continue;
+
+                var partes = texto.Split(';');
+                if (partes.Length < 4) partes = texto.Split(',');
+                if (partes.Length < 4) continue;
+
+                if (!int.TryParse(partes[^2].Trim(), out int bpm) || bpm <= 0) continue;
+                if (!int.TryParse(partes[^1].Trim(), out int seg) || seg < 0) continue;
+
+                // Si el título trae separadores de más, el penúltimo-1 es el artista.
+                string artista = partes[^3].Trim();
+                string titulo = string.Join(" ", partes.Take(partes.Length - 3)).Trim();
+                if (titulo.Length == 0) continue;
+
+                lista.Add((titulo, artista.Length == 0 ? "DJ Desconocido" : artista, bpm, seg));
+            }
+            return lista;
         }
 
         // Play siempre actúa sobre la cabeza de la cola activa (no sobre la
@@ -259,6 +402,8 @@ namespace SoundCoreEngine
 
         private void RefrescarVista()
         {
+            dgvCola.SuspendLayout();
+            dgvCola.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None;
             dgvCola.Rows.Clear();
 
             int index = 1;
@@ -269,6 +414,9 @@ namespace SoundCoreEngine
                 dgvCola.Rows.Add(index++, p.Id, $"{p.Title} — {p.Artist}", $"{p.Bpm} BPM", $"{p.Seconds}s");
                 duracionTotal += p.Seconds;
             }
+
+            dgvCola.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+            dgvCola.ResumeLayout();
 
             lblEstadisticas.Text = $"Total en cola: {index - 1} | Tiempo total: {TimeSpan.FromSeconds(duracionTotal):mm\\:ss}";
         }
